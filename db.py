@@ -30,170 +30,149 @@ def get_connection():
 
 def init_db():
     conn = get_connection()
+    
+    # If using postgres, we need to ensure autocommit or handle rollbacks on error
+    if HAS_POSTGRES and os.getenv("DATABASE_URL"):
+        conn.autocommit = False
+
     cursor = conn.cursor()
 
     # Define auto-increment primary key based on database type
     PK_AUTO = "SERIAL PRIMARY KEY" if (os.getenv("DATABASE_URL") and HAS_POSTGRES) else "INTEGER PRIMARY KEY AUTOINCREMENT"
 
-    # USERS
-    cursor.execute(
-        '''
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            full_name TEXT NOT NULL,
-            phone TEXT NOT NULL,
-            cbe_account TEXT DEFAULT 'Not Provided',
-            registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        '''
-    )
-
     try:
+        # USERS
         cursor.execute(
-            "ALTER TABLE users ADD COLUMN cbe_account TEXT DEFAULT 'Not Provided'"
+            '''
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY,
+                full_name TEXT NOT NULL,
+                phone TEXT NOT NULL,
+                cbe_account TEXT DEFAULT 'Not Provided',
+                registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            '''
         )
-    except Exception:
-        pass
 
-    # EKUBS
-    cursor.execute(
-        f'''
-        CREATE TABLE IF NOT EXISTS ekubs (
-            id {PK_AUTO},
-            name TEXT NOT NULL,
-            amount_per_period REAL NOT NULL,
-            frequency TEXT NOT NULL,
-            duration TEXT NOT NULL,
-            required_members INTEGER NOT NULL,
-            is_started INTEGER DEFAULT 0,
-            start_date TEXT
-        )
-        '''
-    )
-
-    # EKUB MEMBERS
-    cursor.execute(
-        f'''
-        CREATE TABLE IF NOT EXISTS ekub_members (
-            id {PK_AUTO},
-            ekub_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
-            ekub_type TEXT NOT NULL,
-            expected_amount REAL NOT NULL,
-            order_number INTEGER NOT NULL,
-            joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(ekub_id, user_id),
-            FOREIGN KEY(ekub_id) REFERENCES ekubs(id),
-            FOREIGN KEY(user_id) REFERENCES users(user_id)
-        )
-        '''
-    )
-
-    # ACTUAL APPROVED PAYMENTS
-    cursor.execute(
-        f'''
-        CREATE TABLE IF NOT EXISTS payments (
-            id {PK_AUTO},
-            ekub_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
-            period_number INTEGER NOT NULL,
-            amount REAL NOT NULL,
-            penalty REAL DEFAULT 0.0,
-            txn_id TEXT NOT NULL UNIQUE,
-            provider TEXT DEFAULT 'CBE',
-            paid_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(ekub_id) REFERENCES ekubs(id),
-            FOREIGN KEY(user_id) REFERENCES users(user_id)
-        )
-        '''
-    )
-
-    try:
+        # EKUBS
         cursor.execute(
-            "ALTER TABLE payments ADD COLUMN penalty REAL DEFAULT 0.0"
+            f'''
+            CREATE TABLE IF NOT EXISTS ekubs (
+                id {PK_AUTO},
+                name TEXT NOT NULL,
+                amount_per_period REAL NOT NULL,
+                frequency TEXT NOT NULL,
+                duration TEXT NOT NULL,
+                required_members INTEGER NOT NULL,
+                is_started INTEGER DEFAULT 0,
+                start_date TEXT
+            )
+            '''
         )
-    except Exception:
-        pass
 
-    # WINNERS
-    cursor.execute(
-        f'''
-        CREATE TABLE IF NOT EXISTS winners (
-            id {PK_AUTO},
-            ekub_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
-            period_number INTEGER NOT NULL,
-            won_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(ekub_id) REFERENCES ekubs(id),
-            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        # EKUB MEMBERS
+        cursor.execute(
+            f'''
+            CREATE TABLE IF NOT EXISTS ekub_members (
+                id {PK_AUTO},
+                ekub_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                ekub_type TEXT NOT NULL,
+                expected_amount REAL NOT NULL,
+                order_number INTEGER NOT NULL,
+                joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(ekub_id, user_id),
+                FOREIGN KEY(ekub_id) REFERENCES ekubs(id),
+                FOREIGN KEY(user_id) REFERENCES users(user_id)
+            )
+            '''
         )
-        '''
-    )
 
-    # PAYMENT PARTNERS
-    cursor.execute(
-        '''
-        CREATE TABLE IF NOT EXISTS payment_partners (
-            user_id INTEGER PRIMARY KEY,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            active INTEGER DEFAULT 1,
-            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        # ACTUAL APPROVED PAYMENTS
+        cursor.execute(
+            f'''
+            CREATE TABLE IF NOT EXISTS payments (
+                id {PK_AUTO},
+                ekub_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                period_number INTEGER NOT NULL,
+                amount REAL NOT NULL,
+                penalty REAL DEFAULT 0.0,
+                txn_id TEXT NOT NULL UNIQUE,
+                provider TEXT DEFAULT 'CBE',
+                paid_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(ekub_id) REFERENCES ekubs(id),
+                FOREIGN KEY(user_id) REFERENCES users(user_id)
+            )
+            '''
         )
-        '''
-    )
 
-    # PAYMENT REQUESTS
-    cursor.execute(
-        f'''
-        CREATE TABLE IF NOT EXISTS payment_requests (
-            id {PK_AUTO},
-            ekub_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
-            period_number INTEGER NOT NULL,
-            amount REAL NOT NULL,
-            penalty REAL DEFAULT 0.0,
-            txn_id TEXT NOT NULL UNIQUE,
-            provider TEXT DEFAULT 'CBE',
-            payment_date TEXT,
-            payer_name TEXT,
-            receiver_name TEXT,
-            extracted_amount REAL,
-            verification_message TEXT,
-            receipt_path TEXT,
-            bank_link TEXT,
-            assigned_partner_id INTEGER,
-            status TEXT DEFAULT 'pending',
-            reviewed_by INTEGER,
-            reviewed_at TIMESTAMP,
-            rejection_reason TEXT,
-            submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(ekub_id) REFERENCES ekubs(id),
-            FOREIGN KEY(user_id) REFERENCES users(user_id),
-            FOREIGN KEY(assigned_partner_id) REFERENCES users(user_id),
-            FOREIGN KEY(reviewed_by) REFERENCES users(user_id)
+        # WINNERS
+        cursor.execute(
+            f'''
+            CREATE TABLE IF NOT EXISTS winners (
+                id {PK_AUTO},
+                ekub_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                period_number INTEGER NOT NULL,
+                won_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(ekub_id) REFERENCES ekubs(id),
+                FOREIGN KEY(user_id) REFERENCES users(user_id)
+            )
+            '''
         )
-        '''
-    )
 
-    # Existing database migrations
-    migrations = [
-        "ALTER TABLE payment_requests ADD COLUMN receipt_path TEXT",
-        "ALTER TABLE payment_requests ADD COLUMN bank_link TEXT",
-        "ALTER TABLE payment_requests ADD COLUMN assigned_partner_id INTEGER",
-        "ALTER TABLE payment_requests ADD COLUMN status TEXT DEFAULT 'pending'",
-        "ALTER TABLE payment_requests ADD COLUMN reviewed_by INTEGER",
-        "ALTER TABLE payment_requests ADD COLUMN reviewed_at TIMESTAMP",
-        "ALTER TABLE payment_requests ADD COLUMN rejection_reason TEXT"
-    ]
+        # PAYMENT PARTNERS
+        cursor.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS payment_partners (
+                user_id INTEGER PRIMARY KEY,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                active INTEGER DEFAULT 1,
+                FOREIGN KEY(user_id) REFERENCES users(user_id)
+            )
+            '''
+        )
 
-    for mig in migrations:
-        try:
-            cursor.execute(mig)
-        except Exception:
-            pass
+        # PAYMENT REQUESTS
+        cursor.execute(
+            f'''
+            CREATE TABLE IF NOT EXISTS payment_requests (
+                id {PK_AUTO},
+                ekub_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                period_number INTEGER NOT NULL,
+                amount REAL NOT NULL,
+                penalty REAL DEFAULT 0.0,
+                txn_id TEXT NOT NULL UNIQUE,
+                provider TEXT DEFAULT 'CBE',
+                payment_date TEXT,
+                payer_name TEXT,
+                receiver_name TEXT,
+                extracted_amount REAL,
+                verification_message TEXT,
+                receipt_path TEXT,
+                bank_link TEXT,
+                assigned_partner_id INTEGER,
+                status TEXT DEFAULT 'pending',
+                reviewed_by INTEGER,
+                reviewed_at TIMESTAMP,
+                rejection_reason TEXT,
+                submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(ekub_id) REFERENCES ekubs(id),
+                FOREIGN KEY(user_id) REFERENCES users(user_id),
+                FOREIGN KEY(assigned_partner_id) REFERENCES users(user_id),
+                FOREIGN KEY(reviewed_by) REFERENCES users(user_id)
+            )
+            '''
+        )
 
-    conn.commit()
-    conn.close()
+        conn.commit()
+    except Exception as e:
+        print(f"Database initialization error: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
 
 
 # ============================================================
