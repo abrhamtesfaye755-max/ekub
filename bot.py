@@ -4,7 +4,22 @@ import random
 import re
 from datetime import datetime, timedelta
 from tabulate import tabulate
+from threading import Thread
+from flask import Flask
 
+# Create a dummy web server to satisfy Render's port requirement
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot is active!"
+
+def run_http():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+
+# Run the web server in a separate background thread
+Thread(target=run_http).start()
 from telegram import (
     Update,
     ReplyKeyboardMarkup,
