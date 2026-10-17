@@ -29,9 +29,11 @@ def get_connection():
 
 
 def init_db():
-
     conn = get_connection()
     cursor = conn.cursor()
+
+    # Define auto-increment primary key based on database type
+    PK_AUTO = "SERIAL PRIMARY KEY" if (os.getenv("DATABASE_URL") and HAS_POSTGRES) else "INTEGER PRIMARY KEY AUTOINCREMENT"
 
     # USERS
     cursor.execute(
@@ -55,9 +57,9 @@ def init_db():
 
     # EKUBS
     cursor.execute(
-        '''
+        f'''
         CREATE TABLE IF NOT EXISTS ekubs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {PK_AUTO},
             name TEXT NOT NULL,
             amount_per_period REAL NOT NULL,
             frequency TEXT NOT NULL,
@@ -71,9 +73,9 @@ def init_db():
 
     # EKUB MEMBERS
     cursor.execute(
-        '''
+        f'''
         CREATE TABLE IF NOT EXISTS ekub_members (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {PK_AUTO},
             ekub_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
             ekub_type TEXT NOT NULL,
@@ -89,9 +91,9 @@ def init_db():
 
     # ACTUAL APPROVED PAYMENTS
     cursor.execute(
-        '''
+        f'''
         CREATE TABLE IF NOT EXISTS payments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {PK_AUTO},
             ekub_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
             period_number INTEGER NOT NULL,
@@ -115,9 +117,9 @@ def init_db():
 
     # WINNERS
     cursor.execute(
-        '''
+        f'''
         CREATE TABLE IF NOT EXISTS winners (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {PK_AUTO},
             ekub_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
             period_number INTEGER NOT NULL,
@@ -142,9 +144,9 @@ def init_db():
 
     # PAYMENT REQUESTS
     cursor.execute(
-        '''
+        f'''
         CREATE TABLE IF NOT EXISTS payment_requests (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {PK_AUTO},
             ekub_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
             period_number INTEGER NOT NULL,
@@ -948,12 +950,8 @@ def create_payment_request(
         )
     )
 
-    # Fetch lastrowid safely across both drivers
-    if HAS_POSTGRES and isinstance(conn, psycopg2.extensions.connection):
-        # With RealDictCursor, rowid can be retrieved or handled by serial sequence, 
-        # but insertion works without issue. 
-        request_id = None
-    else:
+    request_id = None
+    if not (HAS_POSTGRES and os.getenv("DATABASE_URL")):
         request_id = cur.lastrowid
 
     conn.commit()
