@@ -8,3 +8,4 @@ opencv-python-headless>=4.8.0
 flask
 pyTelegramBotAPI
 # (keep any other libraries you already have listed here)
+psycopg2-binary
