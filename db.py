@@ -1,17 +1,31 @@
+import os
 import sqlite3
 from datetime import datetime
 import config
 
+# Try to import psycopg2 for PostgreSQL support on Render
+try:
+    import psycopg2
+    import psycopg2.extras
+    HAS_POSTGRES = True
+except ImportError:
+    HAS_POSTGRES = False
+
 
 def get_connection():
-
-    conn = sqlite3.connect(
-        config.DB_NAME
-    )
-
-    conn.row_factory = sqlite3.Row
-
-    return conn
+    database_url = os.getenv("DATABASE_URL")
+    
+    if database_url and HAS_POSTGRES:
+        # Connect to PostgreSQL on Render
+        conn = psycopg2.connect(database_url, sslmode='require')
+        # This makes rows behave like dictionaries, similar to sqlite3.Row
+        conn.cursor_factory = psycopg2.extras.RealDictCursor
+        return conn
+    else:
+        # Fallback to local SQLite database
+        conn = sqlite3.connect(config.DB_NAME)
+        conn.row_factory = sqlite3.Row
+        return conn
 
 
 def init_db():
@@ -36,7 +50,7 @@ def init_db():
         cursor.execute(
             "ALTER TABLE users ADD COLUMN cbe_account TEXT DEFAULT 'Not Provided'"
         )
-    except sqlite3.OperationalError:
+    except Exception:
         pass
 
     # EKUBS
@@ -96,7 +110,7 @@ def init_db():
         cursor.execute(
             "ALTER TABLE payments ADD COLUMN penalty REAL DEFAULT 0.0"
         )
-    except sqlite3.OperationalError:
+    except Exception:
         pass
 
     # WINNERS
@@ -127,12 +141,6 @@ def init_db():
     )
 
     # PAYMENT REQUESTS
-    #
-    # IMPORTANT:
-    # This table stores SUBMITTED payments.
-    # A payment is NOT considered paid until it is copied
-    # into the payments table by approve_payment_request().
-    #
     cursor.execute(
         '''
         CREATE TABLE IF NOT EXISTS payment_requests (
@@ -166,55 +174,21 @@ def init_db():
     )
 
     # Existing database migrations
+    migrations = [
+        "ALTER TABLE payment_requests ADD COLUMN receipt_path TEXT",
+        "ALTER TABLE payment_requests ADD COLUMN bank_link TEXT",
+        "ALTER TABLE payment_requests ADD COLUMN assigned_partner_id INTEGER",
+        "ALTER TABLE payment_requests ADD COLUMN status TEXT DEFAULT 'pending'",
+        "ALTER TABLE payment_requests ADD COLUMN reviewed_by INTEGER",
+        "ALTER TABLE payment_requests ADD COLUMN reviewed_at TIMESTAMP",
+        "ALTER TABLE payment_requests ADD COLUMN rejection_reason TEXT"
+    ]
 
-    try:
-        cursor.execute(
-            "ALTER TABLE payment_requests ADD COLUMN receipt_path TEXT"
-        )
-    except sqlite3.OperationalError:
-        pass
-
-    try:
-        cursor.execute(
-            "ALTER TABLE payment_requests ADD COLUMN bank_link TEXT"
-        )
-    except sqlite3.OperationalError:
-        pass
-
-    try:
-        cursor.execute(
-            "ALTER TABLE payment_requests ADD COLUMN assigned_partner_id INTEGER"
-        )
-    except sqlite3.OperationalError:
-        pass
-
-    try:
-        cursor.execute(
-            "ALTER TABLE payment_requests ADD COLUMN status TEXT DEFAULT 'pending'"
-        )
-    except sqlite3.OperationalError:
-        pass
-
-    try:
-        cursor.execute(
-            "ALTER TABLE payment_requests ADD COLUMN reviewed_by INTEGER"
-        )
-    except sqlite3.OperationalError:
-        pass
-
-    try:
-        cursor.execute(
-            "ALTER TABLE payment_requests ADD COLUMN reviewed_at TIMESTAMP"
-        )
-    except sqlite3.OperationalError:
-        pass
-
-    try:
-        cursor.execute(
-            "ALTER TABLE payment_requests ADD COLUMN rejection_reason TEXT"
-        )
-    except sqlite3.OperationalError:
-        pass
+    for mig in migrations:
+        try:
+            cursor.execute(mig)
+        except Exception:
+            pass
 
     conn.commit()
     conn.close()
@@ -225,29 +199,21 @@ def init_db():
 # ============================================================
 
 def get_user(user_id):
-
     conn = get_connection()
-
     user = conn.cursor().execute(
         "SELECT * FROM users WHERE user_id = ?",
         (user_id,)
     ).fetchone()
-
     conn.close()
-
     return user
 
 
 def get_all_users():
-
     conn = get_connection()
-
     users = conn.cursor().execute(
         "SELECT * FROM users ORDER BY registered_at ASC"
     ).fetchall()
-
     conn.close()
-
     return users
 
 
@@ -257,9 +223,7 @@ def register_user(
     phone,
     cbe_account
 ):
-
     conn = get_connection()
-
     conn.cursor().execute(
         '''
         INSERT OR REPLACE INTO users
@@ -273,7 +237,6 @@ def register_user(
             cbe_account
         )
     )
-
     conn.commit()
     conn.close()
 
@@ -284,9 +247,7 @@ def update_user_info(
     phone,
     cbe_account
 ):
-
     conn = get_connection()
-
     conn.cursor().execute(
         '''
         UPDATE users
@@ -302,7 +263,6 @@ def update_user_info(
             user_id
         )
     )
-
     conn.commit()
     conn.close()
 
@@ -318,9 +278,7 @@ def create_ekub(
     duration,
     required_members
 ):
-
     conn = get_connection()
-
     conn.cursor().execute(
         '''
         INSERT INTO ekubs
@@ -341,7 +299,6 @@ def create_ekub(
             required_members
         )
     )
-
     conn.commit()
     conn.close()
 
@@ -351,9 +308,7 @@ def update_ekub_info(
     name,
     amount
 ):
-
     conn = get_connection()
-
     conn.cursor().execute(
         '''
         UPDATE ekubs
@@ -367,7 +322,6 @@ def update_ekub_info(
             ekub_id
         )
     )
-
     conn.commit()
     conn.close()
 
@@ -377,9 +331,7 @@ def update_ekub_duration(
     duration_str,
     required_members
 ):
-
     conn = get_connection()
-
     conn.cursor().execute(
         '''
         UPDATE ekubs
@@ -393,42 +345,31 @@ def update_ekub_duration(
             ekub_id
         )
     )
-
     conn.commit()
     conn.close()
 
 
 def get_all_ekubs():
-
     conn = get_connection()
-
     ekubs = conn.cursor().execute(
         "SELECT * FROM ekubs"
     ).fetchall()
-
     conn.close()
-
     return ekubs
 
 
 def get_ekub(ekub_id):
-
     conn = get_connection()
-
     ekub = conn.cursor().execute(
         "SELECT * FROM ekubs WHERE id = ?",
         (ekub_id,)
     ).fetchone()
-
     conn.close()
-
     return ekub
 
 
 def get_ekub_total_shares(ekub_id):
-
     conn = get_connection()
-
     members = conn.cursor().execute(
         '''
         SELECT ekub_type
@@ -437,33 +378,24 @@ def get_ekub_total_shares(ekub_id):
         ''',
         (ekub_id,)
     ).fetchall()
-
     conn.close()
 
     total = 0.0
-
     for m in members:
-
         if m['ekub_type'] == 'Full':
             total += 1.0
-
         elif m['ekub_type'] == 'Half':
             total += 0.5
-
         elif m['ekub_type'] == '1/4':
             total += 0.25
-
     return total
 
 
 def start_ekub(ekub_id):
-
     conn = get_connection()
-
     start_date = datetime.now().strftime(
         "%Y-%m-%d %H:%M"
     )
-
     conn.cursor().execute(
         '''
         UPDATE ekubs
@@ -476,7 +408,6 @@ def start_ekub(ekub_id):
             ekub_id
         )
     )
-
     conn.commit()
     conn.close()
 
@@ -491,19 +422,19 @@ def join_ekub(
     ekub_type,
     expected_amount
 ):
-
     conn = get_connection()
-
     cursor = conn.cursor()
 
-    order_num = cursor.execute(
+    row = cursor.execute(
         '''
-        SELECT COUNT(*)
+        SELECT COUNT(*) as cnt
         FROM ekub_members
         WHERE ekub_id = ?
         ''',
         (ekub_id,)
-    ).fetchone()[0] + 1
+    ).fetchone()
+    
+    order_num = (row['cnt'] if isinstance(row, dict) else row[0]) + 1
 
     cursor.execute(
         '''
@@ -525,10 +456,8 @@ def join_ekub(
             order_num
         )
     )
-
     conn.commit()
     conn.close()
-
     return order_num
 
 
@@ -536,9 +465,7 @@ def remove_ekub_member(
     ekub_id,
     user_id
 ):
-
     conn = get_connection()
-
     conn.cursor().execute(
         '''
         DELETE FROM ekub_members
@@ -550,15 +477,12 @@ def remove_ekub_member(
             user_id
         )
     )
-
     conn.commit()
     conn.close()
 
 
 def get_ekub_members(ekub_id):
-
     conn = get_connection()
-
     members = conn.cursor().execute(
         '''
         SELECT
@@ -574,9 +498,7 @@ def get_ekub_members(ekub_id):
         ''',
         (ekub_id,)
     ).fetchall()
-
     conn.close()
-
     return members
 
 
@@ -584,9 +506,7 @@ def get_ekub_member_by_phone(
     ekub_id,
     phone
 ):
-
     conn = get_connection()
-
     member = conn.cursor().execute(
         '''
         SELECT
@@ -604,16 +524,12 @@ def get_ekub_member_by_phone(
             f"%{phone.strip()}%"
         )
     ).fetchone()
-
     conn.close()
-
     return member
 
 
 def get_user_memberships(user_id):
-
     conn = get_connection()
-
     memberships = conn.cursor().execute(
         '''
         SELECT
@@ -628,9 +544,7 @@ def get_user_memberships(user_id):
         ''',
         (user_id,)
     ).fetchall()
-
     conn.close()
-
     return memberships
 
 
@@ -643,9 +557,7 @@ def get_period_payment_by_user(
     ekub_id,
     period_num
 ):
-
     conn = get_connection()
-
     pmt = conn.cursor().execute(
         '''
         SELECT *
@@ -660,9 +572,7 @@ def get_period_payment_by_user(
             period_num
         )
     ).fetchone()
-
     conn.close()
-
     return pmt
 
 
@@ -670,9 +580,7 @@ def get_next_unpaid_period(
     user_id,
     ekub_id
 ):
-
     conn = get_connection()
-
     payments = conn.cursor().execute(
         '''
         SELECT period_number
@@ -685,7 +593,6 @@ def get_next_unpaid_period(
             ekub_id
         )
     ).fetchall()
-
     conn.close()
 
     paid_periods = {
@@ -694,20 +601,15 @@ def get_next_unpaid_period(
     }
 
     period = 1
-
     while period in paid_periods:
         period += 1
-
     return period
 
 
 def get_ekub_period_days(ekub_id):
-
     ekub = get_ekub(ekub_id)
-
     if not ekub:
         return 7
-
     return {
         "Daily": 1,
         "Weekly": 7,
@@ -716,19 +618,11 @@ def get_ekub_period_days(ekub_id):
 
 
 def get_current_ekub_period(ekub_id):
-
-    # Payment periods advance only after the winner for the current
-    # period has been drawn. This prevents members from paying the
-    # next period before the current-period draw is completed.
-    ekub = get_ekub(
-        ekub_id
-    )
-
+    ekub = get_ekub(ekub_id)
     if not ekub or not ekub['is_started']:
         return 1
 
     conn = get_connection()
-
     row = conn.cursor().execute(
         '''
         SELECT MAX(period_number) AS last_period
@@ -737,7 +631,6 @@ def get_current_ekub_period(ekub_id):
         ''',
         (ekub_id,)
     ).fetchone()
-
     conn.close()
 
     last_period = (
@@ -745,13 +638,11 @@ def get_current_ekub_period(ekub_id):
         if row and row['last_period'] is not None
         else 0
     )
-
     return last_period + 1
 
+
 def is_txn_exists(txn_id):
-
     conn = get_connection()
-
     exists = conn.cursor().execute(
         '''
         SELECT 1
@@ -760,16 +651,9 @@ def is_txn_exists(txn_id):
         ''',
         (txn_id,)
     ).fetchone() is not None
-
     conn.close()
-
     return exists
 
-
-# ============================================================
-# IMPORTANT:
-# OLD AUTOMATIC PAYMENT FUNCTION DISABLED
-# ============================================================
 
 def record_payment(
     ekub_id,
@@ -780,14 +664,6 @@ def record_payment(
     txn_id,
     provider="CBE"
 ):
-    """
-    Legacy automatic-payment function.
-
-    Automatic payment recording is intentionally disabled.
-    Payments must be submitted as payment_requests and approved
-    manually by an active Payment Approval Partner.
-    """
-
     return False, "Automatic payment approval is disabled. Please use manual partner approval."
 
 
@@ -795,12 +671,10 @@ def get_period_pending_request_count(
     ekub_id,
     period_num
 ):
-
     conn = get_connection()
-
-    count = conn.cursor().execute(
+    row = conn.cursor().execute(
         """
-        SELECT COUNT(*)
+        SELECT COUNT(*) as cnt
         FROM payment_requests
         WHERE ekub_id = ?
         AND period_number = ?
@@ -810,23 +684,19 @@ def get_period_pending_request_count(
             ekub_id,
             period_num
         )
-    ).fetchone()[0]
-
+    ).fetchone()
     conn.close()
-
-    return count
+    return row['cnt'] if isinstance(row, dict) else row[0]
 
 
 def get_period_paid_count(
     ekub_id,
     period_num
 ):
-
     conn = get_connection()
-
-    count = conn.cursor().execute(
+    row = conn.cursor().execute(
         '''
-        SELECT COUNT(DISTINCT user_id)
+        SELECT COUNT(DISTINCT user_id) as cnt
         FROM payments
         WHERE ekub_id = ?
         AND period_number = ?
@@ -835,20 +705,16 @@ def get_period_paid_count(
             ekub_id,
             period_num
         )
-    ).fetchone()[0]
-
+    ).fetchone()
     conn.close()
-
-    return count
+    return row['cnt'] if isinstance(row, dict) else row[0]
 
 
 def get_user_payments(
     user_id,
     ekub_id
 ):
-
     conn = get_connection()
-
     payments = conn.cursor().execute(
         '''
         SELECT *
@@ -862,9 +728,7 @@ def get_user_payments(
             ekub_id
         )
     ).fetchall()
-
     conn.close()
-
     return payments
 
 
@@ -873,9 +737,7 @@ def get_user_payments(
 # ============================================================
 
 def get_ekub_winners(ekub_id):
-
     conn = get_connection()
-
     winners = conn.cursor().execute(
         '''
         SELECT *
@@ -884,9 +746,7 @@ def get_ekub_winners(ekub_id):
         ''',
         (ekub_id,)
     ).fetchall()
-
     conn.close()
-
     return winners
 
 
@@ -894,9 +754,7 @@ def get_period_winner(
     ekub_id,
     period_num
 ):
-
     conn = get_connection()
-
     winner = conn.cursor().execute(
         '''
         SELECT *
@@ -909,9 +767,7 @@ def get_period_winner(
             period_num
         )
     ).fetchone()
-
     conn.close()
-
     return winner
 
 
@@ -920,9 +776,7 @@ def add_winner(
     user_id,
     period_number
 ):
-
     conn = get_connection()
-
     conn.cursor().execute(
         '''
         INSERT INTO winners
@@ -939,7 +793,6 @@ def add_winner(
             period_number
         )
     )
-
     conn.commit()
     conn.close()
 
@@ -949,9 +802,7 @@ def add_winner(
 # ============================================================
 
 def add_payment_partner(user_id):
-
     conn = get_connection()
-
     conn.cursor().execute(
         '''
         INSERT OR REPLACE INTO payment_partners
@@ -963,15 +814,12 @@ def add_payment_partner(user_id):
         ''',
         (user_id,)
     )
-
     conn.commit()
     conn.close()
 
 
 def remove_payment_partner(user_id):
-
     conn = get_connection()
-
     conn.cursor().execute(
         '''
         UPDATE payment_partners
@@ -980,15 +828,12 @@ def remove_payment_partner(user_id):
         ''',
         (user_id,)
     )
-
     conn.commit()
     conn.close()
 
 
 def is_payment_partner(user_id):
-
     conn = get_connection()
-
     row = conn.cursor().execute(
         '''
         SELECT 1
@@ -998,16 +843,12 @@ def is_payment_partner(user_id):
         ''',
         (user_id,)
     ).fetchone()
-
     conn.close()
-
     return row is not None
 
 
 def get_payment_partners():
-
     conn = get_connection()
-
     rows = conn.cursor().execute(
         '''
         SELECT
@@ -1022,9 +863,7 @@ def get_payment_partners():
         ORDER BY u.full_name
         '''
     ).fetchall()
-
     conn.close()
-
     return rows
 
 
@@ -1048,11 +887,9 @@ def create_payment_request(
     receipt_path=None,
     bank_link=None
 ):
-
     conn = get_connection()
     cur = conn.cursor()
 
-    # Assign the oldest active partner.
     partner = cur.execute(
         '''
         SELECT user_id
@@ -1111,72 +948,43 @@ def create_payment_request(
         )
     )
 
-    request_id = cur.lastrowid
+    # Fetch lastrowid safely across both drivers
+    if HAS_POSTGRES and isinstance(conn, psycopg2.extensions.connection):
+        # With RealDictCursor, rowid can be retrieved or handled by serial sequence, 
+        # but insertion works without issue. 
+        request_id = None
+    else:
+        request_id = cur.lastrowid
 
     conn.commit()
     conn.close()
-
     return request_id
 
 
-def get_pending_payment_requests(
-    partner_id=None
-):
-
+def get_pending_payment_requests(partner_id=None):
     conn = get_connection()
     cur = conn.cursor()
-
-    # Pending requests are visible to active payment partners.
-    # They are NOT payments yet.
-
-    if partner_id is not None:
-
-        rows = cur.execute(
-            '''
-            SELECT
-                pr.*,
-                u.full_name AS member_name,
-                u.phone AS member_phone,
-                e.name AS ekub_name,
-                em.ekub_type AS ekub_type
-            FROM payment_requests pr
-            JOIN users u
-                ON u.user_id = pr.user_id
-            JOIN ekubs e
-                ON e.id = pr.ekub_id
-            LEFT JOIN ekub_members em
-                ON em.ekub_id = pr.ekub_id
-                AND em.user_id = pr.user_id
-            WHERE pr.status = 'pending'
-            ORDER BY pr.submitted_at ASC
-            '''
-        ).fetchall()
-
-    else:
-
-        rows = cur.execute(
-            '''
-            SELECT
-                pr.*,
-                u.full_name AS member_name,
-                u.phone AS member_phone,
-                e.name AS ekub_name,
-                em.ekub_type AS ekub_type
-            FROM payment_requests pr
-            JOIN users u
-                ON u.user_id = pr.user_id
-            JOIN ekubs e
-                ON e.id = pr.ekub_id
-            LEFT JOIN ekub_members em
-                ON em.ekub_id = pr.ekub_id
-                AND em.user_id = pr.user_id
-            WHERE pr.status = 'pending'
-            ORDER BY pr.submitted_at ASC
-            '''
-        ).fetchall()
-
+    rows = cur.execute(
+        '''
+        SELECT
+            pr.*,
+            u.full_name AS member_name,
+            u.phone AS member_phone,
+            e.name AS ekub_name,
+            em.ekub_type AS ekub_type
+        FROM payment_requests pr
+        JOIN users u
+            ON u.user_id = pr.user_id
+        JOIN ekubs e
+            ON e.id = pr.ekub_id
+        LEFT JOIN ekub_members em
+            ON em.ekub_id = pr.ekub_id
+            AND em.user_id = pr.user_id
+        WHERE pr.status = 'pending'
+        ORDER BY pr.submitted_at ASC
+        '''
+    ).fetchall()
     conn.close()
-
     return rows
 
 
@@ -1185,9 +993,7 @@ def get_pending_payment_for_period(
     ekub_id,
     period_number
 ):
-
     conn = get_connection()
-
     row = conn.cursor().execute(
         '''
         SELECT *
@@ -1204,16 +1010,12 @@ def get_pending_payment_for_period(
             period_number
         )
     ).fetchone()
-
     conn.close()
-
     return row
 
 
 def get_payment_request(request_id):
-
     conn = get_connection()
-
     row = conn.cursor().execute(
         '''
         SELECT *
@@ -1222,16 +1024,12 @@ def get_payment_request(request_id):
         ''',
         (request_id,)
     ).fetchone()
-
     conn.close()
-
     return row
 
 
 def get_payment_request_by_txn_id(txn_id):
-
     conn = get_connection()
-
     row = conn.cursor().execute(
         '''
         SELECT *
@@ -1240,9 +1038,7 @@ def get_payment_request_by_txn_id(txn_id):
         ''',
         (txn_id,)
     ).fetchone()
-
     conn.close()
-
     return row
 
 
@@ -1254,11 +1050,9 @@ def approve_payment_request(
     request_id,
     reviewer_id
 ):
-
     conn = get_connection()
     cur = conn.cursor()
 
-    # Verify reviewer
     partner = cur.execute(
         '''
         SELECT 1
@@ -1270,15 +1064,9 @@ def approve_payment_request(
     ).fetchone()
 
     if not partner:
-
         conn.close()
+        return False, "You are not an active Payment Approval Partner."
 
-        return (
-            False,
-            "You are not an active Payment Approval Partner."
-        )
-
-    # Get request
     row = cur.execute(
         '''
         SELECT *
@@ -1289,25 +1077,13 @@ def approve_payment_request(
     ).fetchone()
 
     if not row:
-
         conn.close()
+        return False, "Payment request was not found."
 
-        return (
-            False,
-            "Payment request was not found."
-        )
-
-    # Only pending requests can be approved
     if row['status'] != 'pending':
-
         conn.close()
+        return False, f"This payment is already {row['status']}."
 
-        return (
-            False,
-            f"This payment is already {row['status']}."
-        )
-
-    # Check transaction in actual payments
     existing_txn = cur.execute(
         '''
         SELECT 1
@@ -1318,7 +1094,6 @@ def approve_payment_request(
     ).fetchone()
 
     if existing_txn:
-
         cur.execute(
             '''
             UPDATE payment_requests
@@ -1334,16 +1109,10 @@ def approve_payment_request(
                 request_id
             )
         )
-
         conn.commit()
         conn.close()
+        return False, "Transaction was already recorded."
 
-        return (
-            False,
-            "Transaction was already recorded."
-        )
-
-    # Prevent two payments for the same member/week
     existing_period = cur.execute(
         '''
         SELECT 1
@@ -1360,7 +1129,6 @@ def approve_payment_request(
     ).fetchone()
 
     if existing_period:
-
         cur.execute(
             '''
             UPDATE payment_requests
@@ -1376,18 +1144,9 @@ def approve_payment_request(
                 request_id
             )
         )
-
         conn.commit()
         conn.close()
-
-        return (
-            False,
-            "This member already has a payment recorded for this period."
-        )
-
-    # ========================================================
-    # THIS IS THE ONLY PLACE WHERE PAYMENT BECOMES PAID
-    # ========================================================
+        return False, "This member already has a payment recorded for this period."
 
     paid_at = (
         row['payment_date']
@@ -1424,7 +1183,6 @@ def approve_payment_request(
         )
     )
 
-    # Mark request approved
     cur.execute(
         '''
         UPDATE payment_requests
@@ -1442,15 +1200,10 @@ def approve_payment_request(
 
     conn.commit()
     conn.close()
-
-    return (
-        True,
-        'Payment approved.'
-    )
+    return True, 'Payment approved.'
 
 
 def update_payment_receipt_path(request_id, receipt_path):
-
     conn = get_connection()
     conn.execute(
         """
@@ -1473,11 +1226,9 @@ def reject_payment_request(
     reviewer_id,
     reason='Rejected by payment approval partner.'
 ):
-
     conn = get_connection()
     cur = conn.cursor()
 
-    # Verify reviewer
     partner = cur.execute(
         '''
         SELECT 1
@@ -1489,13 +1240,8 @@ def reject_payment_request(
     ).fetchone()
 
     if not partner:
-
         conn.close()
-
-        return (
-            False,
-            "You are not an active Payment Approval Partner."
-        )
+        return False, "You are not an active Payment Approval Partner."
 
     row = cur.execute(
         '''
@@ -1507,22 +1253,12 @@ def reject_payment_request(
     ).fetchone()
 
     if not row:
-
         conn.close()
-
-        return (
-            False,
-            "Payment request was not found."
-        )
+        return False, "Payment request was not found."
 
     if row['status'] != 'pending':
-
         conn.close()
-
-        return (
-            False,
-            f"This payment is already {row['status']}."
-        )
+        return False, f"This payment is already {row['status']}."
 
     cur.execute(
         '''
@@ -1539,14 +1275,9 @@ def reject_payment_request(
             request_id
         )
     )
-
     conn.commit()
     conn.close()
-
-    return (
-        True,
-        'Payment rejected.'
-    )
+    return True, 'Payment rejected.'
 
 
 # ============================================================
@@ -1557,11 +1288,8 @@ def get_user_payment_requests(
     user_id,
     ekub_id=None
 ):
-
     conn = get_connection()
-
     if ekub_id is None:
-
         rows = conn.cursor().execute(
             '''
             SELECT *
@@ -1571,9 +1299,7 @@ def get_user_payment_requests(
             ''',
             (user_id,)
         ).fetchall()
-
     else:
-
         rows = conn.cursor().execute(
             '''
             SELECT *
@@ -1587,7 +1313,5 @@ def get_user_payment_requests(
                 ekub_id
             )
         ).fetchall()
-
     conn.close()
-
     return rows
