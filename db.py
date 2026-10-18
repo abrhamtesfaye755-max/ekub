@@ -248,9 +248,13 @@ def register_user(
     conn = get_connection()
     conn.cursor().execute(
         '''
-        INSERT OR REPLACE INTO users
+        INSERT INTO users
         (user_id, full_name, phone, cbe_account)
         VALUES (?, ?, ?, ?)
+        ON CONFLICT (user_id) DO UPDATE SET
+            full_name = EXCLUDED.full_name,
+            phone = EXCLUDED.phone,
+            cbe_account = EXCLUDED.cbe_account
         ''',
         (
             user_id,
@@ -827,12 +831,14 @@ def add_payment_partner(user_id):
     conn = get_connection()
     conn.cursor().execute(
         '''
-        INSERT OR REPLACE INTO payment_partners
+        INSERT INTO payment_partners
         (
             user_id,
             active
         )
         VALUES (?, 1)
+        ON CONFLICT (user_id) DO UPDATE SET
+            active = 1
         ''',
         (user_id,)
     )
