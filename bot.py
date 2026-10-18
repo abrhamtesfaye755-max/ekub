@@ -1514,8 +1514,6 @@ async def partner_payment_action(update: Update, context: ContextTypes.DEFAULT_T
 
         if ok:
 
-            # get_payment_request() returns sqlite3.Row, not a normal dict.
-            # Never call .get() on it. Fetch the related user/Ekub separately.
             r = db.get_payment_request(request_id)
 
             if not r:
@@ -1538,8 +1536,6 @@ async def partner_payment_action(update: Update, context: ContextTypes.DEFAULT_T
                 else f"Ekub_{r['ekub_id']}"
             )
 
-            # Move the receipt into the permanent payment_receipts folder
-            # only after the payment has been approved.
             old_receipt_path = r['receipt_path']
             if old_receipt_path and os.path.exists(old_receipt_path):
                 try:
@@ -1582,8 +1578,6 @@ async def partner_payment_action(update: Update, context: ContextTypes.DEFAULT_T
                 except Exception:
                     logging.exception("Payment approved but receipt move failed for request %s", request_id)
 
-            # Remove the old Approve/Reject buttons so the partner cannot
-            # accidentally approve the same request again.
             try:
                 await query.message.edit_reply_markup(reply_markup=None)
             except Exception:
@@ -1599,7 +1593,6 @@ async def partner_payment_action(update: Update, context: ContextTypes.DEFAULT_T
                 parse_mode="Markdown"
             )
 
-            # Notify the payer. Do not silently hide failures in the log.
             try:
                 await context.bot.send_message(
                     chat_id=r['user_id'],
@@ -1638,7 +1631,6 @@ async def partner_payment_action(update: Update, context: ContextTypes.DEFAULT_T
                 request_id
             )
 
-            # Rejected receipts are not kept in the permanent folder.
             old_receipt_path = r['receipt_path']
             if old_receipt_path and os.path.exists(old_receipt_path):
                 try:
@@ -1882,8 +1874,6 @@ async def pay_select_ekub_cb(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "%Y-%m-%d %H:%M"
     )
 
-    # Next-payment lock: the next period opens only after the
-    # winner for the current period has been drawn.
     if auto_period > current_period:
 
         await query.message.reply_text(
@@ -1897,8 +1887,6 @@ async def pay_select_ekub_cb(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         return ConversationHandler.END
 
-    # Period duration is defined by the Ekub frequency:
-    # Daily = 24 hours, Weekly = 7 days, Monthly = 30 days.
     period_days = {
         "Daily": 1,
         "Weekly": 7,
@@ -1996,12 +1984,7 @@ async def pay_select_ekub_cb(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def pay_handle_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Receive a payment receipt/link and create a PENDING manual-review request.
 
-    OCR/automatic receipt verification is intentionally disabled. The
-    Payment Approval Partner is responsible for checking the receipt manually
-    and approving/rejecting the request.
-    """
     if not update.message.photo and not update.message.text:
         await update.message.reply_text(
             "Please upload an image screenshot or send the Bank Link."
@@ -2043,9 +2026,6 @@ async def pay_handle_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE)
     bank_link = None
 
     if update.message.photo:
-        # Keep the uploaded receipt outside payment_receipts while it is
-        # waiting for manual approval. It is moved into payment_receipts
-        # only after the Payment Approval Partner approves it.
         os.makedirs("pending_receipts", exist_ok=True)
 
         member_name = update.effective_user.full_name or f"User_{user_id}"
@@ -2069,8 +2049,6 @@ async def pay_handle_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE)
     else:
         bank_link = update.message.text.strip()
 
-    # This is only an internal submission reference. The real bank
-    # transaction ID is checked manually by the Payment Approval Partner.
     txn_id = f"MANUAL-{user_id}-{update.message.message_id}"
     provider = "CBE"
     payment_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -2748,7 +2726,7 @@ def main():
         )
     )
 
-    # Callbacks
+    # Callbacks (Ensure all matching patterns are fully registered)
 
     app.add_handler(
         CallbackQueryHandler(
