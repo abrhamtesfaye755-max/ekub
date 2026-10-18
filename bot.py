@@ -231,12 +231,18 @@ async def reg_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def reg_cbe(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     user_id = update.effective_user.id
 
-    name = context.user_data['reg_name']
-    phone = context.user_data['reg_phone']
+    name = context.user_data.get('reg_name')
+    phone = context.user_data.get('reg_phone')
     cbe_account = update.message.text.strip()
+
+    if not name or not phone:
+        await update.message.reply_text(
+            "⚠️ Registration session expired. Please type /start to begin again."
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
 
     db.register_user(
         user_id,
@@ -251,6 +257,7 @@ async def reg_cbe(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_main_menu(user_id, False)
     )
 
+    context.user_data.clear()
     return ConversationHandler.END
 
 
