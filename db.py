@@ -3,7 +3,7 @@ import sqlite3
 from datetime import datetime
 import config
 
-# Try to import psycopg2 for PostgreSQL support on Render
+# Try to import psycopg2 for PostgreSQL support
 try:
     import psycopg2
     import psycopg2.extras
@@ -12,15 +12,50 @@ except ImportError:
     HAS_POSTGRES = False
 
 
+class PGConnectionWrapper:
+    """Wraps psycopg2 connection to automatically translate SQLite '?' placeholders to Postgres '%s'."""
+    def __init__(self, conn):
+        self.conn = conn
+        
+    def cursor(self, *args, **kwargs):
+        cur = self.conn.cursor(*args, **kwargs)
+        return PGCursorWrapper(cur)
+        
+    def commit(self):
+        return self.conn.commit()
+        
+    def rollback(self):
+        return self.conn.rollback()
+        
+    def close(self):
+        return self.conn.close()
+        
+    def __getattr__(self, name):
+        return getattr(self.conn, name)
+
+
+class PGCursorWrapper:
+    """Wraps psycopg2 cursor to replace '?' with '%s' in SQL queries."""
+    def __init__(self, cursor):
+        self.cursor = cursor
+        
+    def execute(self, query, vars=None):
+        # Automatically convert SQLite '?' placeholders to Postgres '%s'
+        formatted_query = query.replace('?', '%s')
+        return self.cursor.execute(formatted_query, vars)
+        
+    def __getattr__(self, name):
+        return getattr(self.cursor, name)
+
+
 def get_connection():
     database_url = os.getenv("DATABASE_URL")
     
     if database_url and HAS_POSTGRES:
-        # Connect to PostgreSQL on Render
+        # Connect to PostgreSQL and wrap it
         conn = psycopg2.connect(database_url, sslmode='require')
-        # This makes rows behave like dictionaries, similar to sqlite3.Row
         conn.cursor_factory = psycopg2.extras.RealDictCursor
-        return conn
+        return PGConnectionWrapper(conn)
     else:
         # Fallback to local SQLite database
         conn = sqlite3.connect(config.DB_NAME)
@@ -31,9 +66,11 @@ def get_connection():
 def init_db():
     conn = get_connection()
     
-    # If using postgres, we need to ensure autocommit or handle rollbacks on error
     if HAS_POSTGRES and os.getenv("DATABASE_URL"):
-        conn.autocommit = False
+        try:
+            conn.autocommit = False
+        except Exception:
+            pass
 
     cursor = conn.cursor()
 
@@ -170,7 +207,10 @@ def init_db():
         conn.commit()
     except Exception as e:
         print(f"Database initialization error: {e}")
-        conn.rollback()
+        try:
+            conn.rollback()
+        except Exception:
+            pass
     finally:
         conn.close()
 
@@ -931,7 +971,10 @@ def create_payment_request(
 
     request_id = None
     if not (HAS_POSTGRES and os.getenv("DATABASE_URL")):
-        request_id = cur.lastrowid
+        try:
+            request_id = cur.lastrowid
+        except Exception:
+            pass
 
     conn.commit()
     conn.close()
