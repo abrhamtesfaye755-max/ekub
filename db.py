@@ -77,13 +77,15 @@ def init_db():
 
     # Define auto-increment primary key based on database type
     PK_AUTO = "SERIAL PRIMARY KEY" if (os.getenv("DATABASE_URL") and HAS_POSTGRES) else "INTEGER PRIMARY KEY AUTOINCREMENT"
+    # Use BIGINT for Postgres to support large Telegram user IDs without range overflow
+    USER_ID_TYPE = "BIGINT" if (os.getenv("DATABASE_URL") and HAS_POSTGRES) else "INTEGER"
 
     try:
         # USERS
         cursor.execute(
-            '''
+            f'''
             CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY,
+                user_id {USER_ID_TYPE} PRIMARY KEY,
                 full_name TEXT NOT NULL,
                 phone TEXT NOT NULL,
                 cbe_account TEXT DEFAULT 'Not Provided',
@@ -114,7 +116,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS ekub_members (
                 id {PK_AUTO},
                 ekub_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
+                user_id {USER_ID_TYPE} NOT NULL,
                 ekub_type TEXT NOT NULL,
                 expected_amount REAL NOT NULL,
                 order_number INTEGER NOT NULL,
@@ -132,7 +134,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS payments (
                 id {PK_AUTO},
                 ekub_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
+                user_id {USER_ID_TYPE} NOT NULL,
                 period_number INTEGER NOT NULL,
                 amount REAL NOT NULL,
                 penalty REAL DEFAULT 0.0,
@@ -151,7 +153,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS winners (
                 id {PK_AUTO},
                 ekub_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
+                user_id {USER_ID_TYPE} NOT NULL,
                 period_number INTEGER NOT NULL,
                 won_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(ekub_id) REFERENCES ekubs(id),
@@ -162,9 +164,9 @@ def init_db():
 
         # PAYMENT PARTNERS
         cursor.execute(
-            '''
+            f'''
             CREATE TABLE IF NOT EXISTS payment_partners (
-                user_id INTEGER PRIMARY KEY,
+                user_id {USER_ID_TYPE} PRIMARY KEY,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 active INTEGER DEFAULT 1,
                 FOREIGN KEY(user_id) REFERENCES users(user_id)
@@ -178,7 +180,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS payment_requests (
                 id {PK_AUTO},
                 ekub_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
+                user_id {USER_ID_TYPE} NOT NULL,
                 period_number INTEGER NOT NULL,
                 amount REAL NOT NULL,
                 penalty REAL DEFAULT 0.0,
@@ -191,9 +193,9 @@ def init_db():
                 verification_message TEXT,
                 receipt_path TEXT,
                 bank_link TEXT,
-                assigned_partner_id INTEGER,
+                assigned_partner_id {USER_ID_TYPE},
                 status TEXT DEFAULT 'pending',
-                reviewed_by INTEGER,
+                reviewed_by {USER_ID_TYPE},
                 reviewed_at TIMESTAMP,
                 rejection_reason TEXT,
                 submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
