@@ -77,7 +77,6 @@ def init_db():
 
     # Define auto-increment primary key based on database type
     PK_AUTO = "SERIAL PRIMARY KEY" if (os.getenv("DATABASE_URL") and HAS_POSTGRES) else "INTEGER PRIMARY KEY AUTOINCREMENT"
-    # Use BIGINT for Postgres to support large Telegram user IDs without range overflow
     USER_ID_TYPE = "BIGINT" if (os.getenv("DATABASE_URL") and HAS_POSTGRES) else "INTEGER"
 
     try:
@@ -248,23 +247,32 @@ def register_user(
     cbe_account
 ):
     conn = get_connection()
-    conn.cursor().execute(
-        '''
-        INSERT INTO users
-        (user_id, full_name, phone, cbe_account)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT (user_id) DO UPDATE SET
-            full_name = EXCLUDED.full_name,
-            phone = EXCLUDED.phone,
-            cbe_account = EXCLUDED.cbe_account
-        ''',
-        (
-            user_id,
-            name,
-            phone,
-            cbe_account
+    cur = conn.cursor()
+    
+    cur.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
+    existing = cur.fetchone()
+    
+    if existing:
+        cur.execute(
+            '''
+            UPDATE users
+            SET full_name = ?,
+                phone = ?,
+                cbe_account = ?
+            WHERE user_id = ?
+            ''',
+            (name, phone, cbe_account, user_id)
         )
-    )
+    else:
+        cur.execute(
+            '''
+            INSERT INTO users
+            (user_id, full_name, phone, cbe_account)
+            VALUES (?, ?, ?, ?)
+            ''',
+            (user_id, name, phone, cbe_account)
+        )
+        
     conn.commit()
     conn.close()
 
