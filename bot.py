@@ -762,39 +762,42 @@ async def list_ekubs(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def admin_start_ekub_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     query = update.callback_query
     await query.answer()
 
-    ekub_id = int(query.data.split("_")[1])
+    try:
+        ekub_id = int(query.data.split("_")[1])
+        db.start_ekub(ekub_id)
 
-    db.start_ekub(ekub_id)
+        ekub = db.get_ekub(ekub_id)
 
-    ekub = db.get_ekub(ekub_id)
+        await query.message.reply_text(
+            f"🚀 *Ekub '{ekub['name']}' has STARTED!*",
+            parse_mode="Markdown"
+        )
 
-    await query.message.reply_text(
-        f"🚀 *Ekub '{ekub['name']}' has STARTED!*",
-        parse_mode="Markdown"
-    )
+        for m in db.get_ekub_members(ekub_id):
+            try:
+                msg = (
+                    f"🎉 *GREAT NEWS! Ekub '{ekub['name']}' "
+                    f"HAS OFFICIALLY STARTED!*\n"
+                    f"📅 Start Date: {ekub['start_date']}"
+                )
 
-    for m in db.get_ekub_members(ekub_id):
+                await context.bot.send_message(
+                    chat_id=m['user_id'],
+                    text=msg,
+                    parse_mode="Markdown"
+                )
 
-        try:
+            except Exception:
+                pass
 
-            msg = (
-                f"🎉 *GREAT NEWS! Ekub '{ekub['name']}' "
-                f"HAS OFFICIALLY STARTED!*\n"
-                f"📅 Start Date: {ekub['start_date']}"
-            )
-
-            await context.bot.send_message(
-                chat_id=m['user_id'],
-                text=msg,
-                parse_mode="Markdown"
-            )
-
-        except Exception:
-            pass
+    except Exception as e:
+        logging.exception("Error starting ekub callback")
+        await query.message.reply_text(
+            f"⚠️ Failed to start Ekub. Error: {e}"
+        )
 
 
 async def join_ekub_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1298,7 +1301,6 @@ async def partner_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return ConversationHandler.END
 
-    # First choose which Ekub to review.
     ekubs = {}
     for r in requests:
         ekubs[r['ekub_id']] = r['ekub_name']
@@ -1501,10 +1503,6 @@ async def partner_payment_action(update: Update, context: ContextTypes.DEFAULT_T
         query.data.rsplit("_", 1)[1]
     )
 
-    # --------------------------------------------------------
-    # APPROVE
-    # --------------------------------------------------------
-
     if query.data.startswith("payment_approve_"):
 
         ok, msg = db.approve_payment_request(
@@ -1613,10 +1611,6 @@ async def partner_payment_action(update: Update, context: ContextTypes.DEFAULT_T
             await query.message.reply_text(
                 f"⚠️ {msg}"
             )
-
-    # --------------------------------------------------------
-    # REJECT
-    # --------------------------------------------------------
 
     elif query.data.startswith("payment_reject_"):
 
@@ -2726,7 +2720,7 @@ def main():
         )
     )
 
-    # Callbacks (Ensure all matching patterns are fully registered)
+    # Callbacks
 
     app.add_handler(
         CallbackQueryHandler(
