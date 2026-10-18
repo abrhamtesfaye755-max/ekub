@@ -42,7 +42,8 @@ class PGCursorWrapper:
     def execute(self, query, vars=None):
         # Automatically convert SQLite '?' placeholders to Postgres '%s'
         formatted_query = query.replace('?', '%s')
-        return self.cursor.execute(formatted_query, vars)
+        self.cursor.execute(formatted_query, vars)
+        return self  # Returns self so .fetchall() / .fetchone() work correctly immediately
         
     def __getattr__(self, name):
         return getattr(self.cursor, name)
@@ -1225,7 +1226,7 @@ def approve_payment_request(
 
 def update_payment_receipt_path(request_id, receipt_path):
     conn = get_connection()
-    conn.execute(
+    conn.cursor().execute(
         """
         UPDATE payment_requests
         SET receipt_path = ?
