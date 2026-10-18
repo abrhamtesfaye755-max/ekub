@@ -419,23 +419,31 @@ def get_ekub_total_shares(ekub_id):
 
 def start_ekub(ekub_id):
     conn = get_connection()
-    start_date = datetime.now().strftime(
-        "%Y-%m-%d %H:%M"
-    )
-    conn.cursor().execute(
-        '''
-        UPDATE ekubs
-        SET is_started = 1,
-            start_date = ?
-        WHERE id = ?
-        ''',
-        (
-            start_date,
-            ekub_id
+    cursor = conn.cursor()
+    start_date = datetime.now().strftime("%Y-%m-%d %H:%M")
+    try:
+        cursor.execute(
+            '''
+            UPDATE ekubs
+            SET is_started = 1,
+                start_date = ?
+            WHERE id = ?
+            ''',
+            (
+                start_date,
+                ekub_id
+            )
         )
-    )
-    conn.commit()
-    conn.close()
+        conn.commit()
+    except Exception as e:
+        print(f"Error starting ekub: {e}")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise e
+    finally:
+        conn.close()
 
 
 # ============================================================
